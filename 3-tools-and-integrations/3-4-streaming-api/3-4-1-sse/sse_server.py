@@ -17,10 +17,23 @@ def build_message_payload(message_index: int) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def build_sse_event(event_id: str, event_type: str, data: str) -> str:
+    """Build a single SSE event block.
+    Args:
+        event_id (str): Event identifier for reconnection support.
+        event_type (str): Event type name for routing on the client side.
+        data (str): Data payload as a string (commonly JSON)."""
+    return f'id: {event_id}\nevent: {event_type}\ndata: {data}\n\n'
+
+
 async def event_stream() -> Any:
     for i in range(5):
         payload_json = build_message_payload(message_index=i)
-        yield f'data: {payload_json}\n\n'
+        yield build_sse_event(
+            event_id=str(i),
+            event_type='message',
+            data=payload_json
+        )
         await asyncio.sleep(1)
 
 
