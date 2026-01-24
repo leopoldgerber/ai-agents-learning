@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 
@@ -37,16 +38,30 @@ async def stream_run_events(ws: WebSocket, run_id: str) -> None:
     Args:
         ws (WebSocket): WebSocket connection.
         run_id (str): Run identifier."""
-    for i in range(5):
-        await ws.send_text(
-            build_ws_event(
-                event_type='run_event',
-                payload={'run_id': run_id, 'step': i, 'text': f'agent step {i}'},
+    try:
+        for i in range(5):
+            await ws.send_text(
+                build_ws_event(
+                    event_type='run_event',
+                    payload={'run_id': run_id, 'step': i, 'text': f'agent step {i}'},
+                )
             )
-        )
-        await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
-    await ws.send_text(build_ws_event(event_type='run_done', payload={'run_id': run_id}))
+        await ws.send_text(build_ws_event(event_type='run_done', payload={'run_id': run_id}))
+    except asyncio.CancelledError:
+        await ws.send_text(build_ws_event(event_type='run_cancelled', payload={'run_id': run_id}))
+        raise
+
+
+def parse_run_id(command: dict[str, Any]) -> str | None:
+    """Parse run_id from a command payload.
+    Args:
+        command (dict[str, Any]): Parsed command object."""
+    run_id = command.get('run_id')
+    if not isinstance(run_id, str) or not run_id:
+        return None
+    return run_id
 
 
 @app.get('/health')
@@ -65,6 +80,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     logger.info('WebSocket client connected')
 
+    run_task: asyncio.Task[None] | None = None
+    current_run_id: str | None = None
+
     try:
         await ws.send_text(build_ws_event(event_type='connected', payload={'message': 'Connected'}))
 
@@ -73,27 +91,62 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             command = parse_ws_command(raw_text=raw_text)
 
             command_type = command.get('command')
-            if command_type != 'start_run':
-                await ws.send_text(
-                    build_ws_event(
-                        event_type='error',
-                        payload={'message': 'Unknown command', 'received': command},
+
+            if command_type == 'start_run':
+                if run_task is not None and not run_task.done():
+                    await ws.send_text(
+                        build_ws_event(
+                            event_type='error',
+                            payload={'message': 'Run already in progress', 'run_id': current_run_id},
+                        )
                     )
-                )
+                    continue
+
+                run_id = parse_run_id(command=command)
+                if run_id is None:
+                    await ws.send_text(
+                        build_ws_event(
+                            event_type='error',
+                            payload={'message': 'run_id is required', 'received': command},
+                        )
+                    )
+                    continue
+
+                current_run_id = run_id
+                await ws.send_text(build_ws_event(event_type='run_started', payload={'run_id': run_id}))
+
+                run_task = asyncio.create_task(stream_run_events(ws=ws, run_id=run_id))
                 continue
 
-            run_id = command.get('run_id')
-            if not isinstance(run_id, str) or not run_id:
-                await ws.send_text(
-                    build_ws_event(
-                        event_type='error',
-                        payload={'message': 'run_id is required', 'received': command},
+            if command_type == 'cancel_run':
+                if run_task is None or run_task.done():
+                    await ws.send_text(
+                        build_ws_event(
+                            event_type='error',
+                            payload={'message': 'No active run to cancel'},
+                        )
                     )
-                )
+                    continue
+
+                run_task.cancel()
+                try:
+                    await run_task
+                except asyncio.CancelledError:
+                    pass
+
+                run_task = None
+                current_run_id = None
                 continue
 
-            await ws.send_text(build_ws_event(event_type='run_started', payload={'run_id': run_id}))
-            await stream_run_events(ws=ws, run_id=run_id)
+            await ws.send_text(
+                build_ws_event(
+                    event_type='error',
+                    payload={'message': 'Unknown command', 'received': command},
+                )
+            )
 
     except WebSocketDisconnect:
         logger.info('WebSocket client disconnected')
+    finally:
+        if run_task is not None and not run_task.done():
+            run_task.cancel()

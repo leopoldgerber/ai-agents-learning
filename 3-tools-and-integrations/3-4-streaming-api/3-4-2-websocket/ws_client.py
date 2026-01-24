@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+
 import websockets
 
 
@@ -20,6 +21,23 @@ def build_start_run_command(run_id: str) -> str:
     return json.dumps(command, ensure_ascii=False)
 
 
+def build_cancel_run_command() -> str:
+    """Build a cancel_run command message.
+    Args:
+        None: No args."""
+    command = {'command': 'cancel_run'}
+    return json.dumps(command, ensure_ascii=False)
+
+
+async def schedule_cancel(websocket: Any, delay_seconds: float) -> None:
+    """Send cancel_run after a delay.
+    Args:
+        websocket (Any): WebSocket connection.
+        delay_seconds (float): Delay before sending cancel command."""
+    await asyncio.sleep(delay_seconds)
+    await websocket.send(build_cancel_run_command())
+
+
 async def run_ws_client(url: str, run_id: str) -> None:
     """Connect to WebSocket, start a run, and print streamed events.
     Args:
@@ -31,12 +49,14 @@ async def run_ws_client(url: str, run_id: str) -> None:
 
         await websocket.send(build_start_run_command(run_id=run_id))
 
+        asyncio.create_task(schedule_cancel(websocket=websocket, delay_seconds=2.5))
+
         while True:
             server_msg = await websocket.recv()
             event = parse_ws_event(raw_text=server_msg)
             print('RECV:', event)
 
-            if event.get('event_type') == 'run_done':
+            if event.get('event_type') in {'run_done', 'run_cancelled'}:
                 break
 
 
