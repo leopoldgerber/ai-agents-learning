@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Request
@@ -7,6 +8,8 @@ from fastapi.responses import StreamingResponse
 
 
 app = FastAPI()
+
+logger = logging.getLogger('uvicorn.error')
 
 
 def build_message_payload(message_index: int) -> str:
@@ -46,7 +49,10 @@ def parse_last_event_id(request: Request) -> int:
     return int(last_event_id) + 1
 
 
-async def generate_message_events(start_index: int, end_index: int) -> AsyncGenerator[str, None]:
+async def generate_message_events(
+    start_index: int,
+    end_index: int,
+) -> AsyncGenerator[str, None]:
     """Generate message events for the demo stream.
     Args:
         start_index (int): Start index for messages.
@@ -57,7 +63,10 @@ async def generate_message_events(start_index: int, end_index: int) -> AsyncGene
         await asyncio.sleep(1)
 
 
-async def generate_heartbeat_events(start_event_id: int, interval_seconds: float) -> AsyncGenerator[str, None]:
+async def generate_heartbeat_events(
+    start_event_id: int,
+    interval_seconds: float,
+) -> AsyncGenerator[str, None]:
     """Generate heartbeat events on a fixed interval.
     Args:
         start_event_id (int): Starting id for heartbeat events.
@@ -71,25 +80,40 @@ async def generate_heartbeat_events(start_event_id: int, interval_seconds: float
 
 
 async def event_stream(request: Request, start_index: int) -> Any:
+    """Stream SSE events until client disconnects.
+    Args:
+        request (Request): FastAPI request for client context.
+        start_index (int): Start index for demo messages."""
     message_end_index = 5
     heartbeat_interval_seconds = 5.0
 
-    async for message_event in generate_message_events(start_index=start_index, end_index=message_end_index):
-        yield message_event
+    try:
+        async for message_event in generate_message_events(
+            start_index=start_index,
+            end_index=message_end_index,
+        ):
+            if await request.is_disconnected():
+                logger.info('Client disconnected during message stream')
+                return
+            yield message_event
 
-    heartbeat_start_id = message_end_index
-    async for heartbeat_event in generate_heartbeat_events(
-        start_event_id=heartbeat_start_id,
-        interval_seconds=heartbeat_interval_seconds,
-    ):
-        if await request.is_disconnected():
-            break
-        yield heartbeat_event
+        async for heartbeat_event in generate_heartbeat_events(
+            start_event_id=message_end_index,
+            interval_seconds=heartbeat_interval_seconds,
+        ):
+            if await request.is_disconnected():
+                logger.info('Client disconnected during heartbeat')
+                return
+            yield heartbeat_event
+    except asyncio.CancelledError:
+        logger.info('Client disconnected (stream cancelled)')
+        raise
 
 
 @app.get('/stream')
 async def stream(request: Request) -> StreamingResponse:
     start_index = parse_last_event_id(request=request)
+    logger.info('Client connected to /stream endpoint')
     return StreamingResponse(
         event_stream(request=request, start_index=start_index),
         media_type='text/event-stream',
