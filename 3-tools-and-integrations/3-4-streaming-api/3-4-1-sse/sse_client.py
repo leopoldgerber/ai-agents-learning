@@ -15,4 +15,6 @@ def consume_sse_stream(url: str) -> None:
 
 if __name__ == '__main__':
     sse_url = 'http://localhost:8000/stream'
+    sse_url = 'http://localhost:8000/stream?topic=run-b'
+    sse_url = 'http://localhost:8000/stream?topic=run-a'
     consume_sse_stream(url=sse_url)

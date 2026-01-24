@@ -63,7 +63,8 @@ def parse_topic(request: Request) -> str:
     return topic
 
 
-async def append_buffered_event(topic: str, event_id: int, event_type: str, data: str) -> None:
+async def append_buffered_event(
+        topic: str, event_id: int, event_type: str, data: str) -> None:
     """Append a streamed event to in-memory buffer.
     Args:
         topic (str): Topic identifier for stream isolation.
@@ -81,7 +82,8 @@ async def append_buffered_event(topic: str, event_id: int, event_type: str, data
         )
 
 
-async def read_buffered_events(topic: str, start_event_id: int) -> list[dict[str, str]]:
+async def read_buffered_events(
+        topic: str, start_event_id: int) -> list[dict[str, str]]:
     """Read buffered events for a topic starting from a given id (inclusive).
     Args:
         topic (str): Topic identifier for stream isolation.
@@ -99,7 +101,8 @@ async def read_last_buffered_id(topic: str) -> int | None:
     Args:
         topic (str): Topic identifier for stream isolation."""
     async with events_lock:
-        topic_events = [event for event in list(events_buffer) if event['topic'] == topic]
+        topic_events = [
+            event for event in list(events_buffer) if event['topic'] == topic]
         if not topic_events:
             return None
         return int(topic_events[-1]['id'])
@@ -117,8 +120,13 @@ async def generate_message_events(
         end_event_id (int): End event id (exclusive) for messages."""
     for event_id in range(start_event_id, end_event_id):
         payload_json = build_message_payload(message_index=event_id)
-        await append_buffered_event(topic=topic, event_id=event_id, event_type='message', data=payload_json)
-        yield build_sse_event(event_id=str(event_id), event_type='message', data=payload_json)
+        await append_buffered_event(
+            topic=topic,
+            event_id=event_id,
+            event_type='message',
+            data=payload_json)
+        yield build_sse_event(
+            event_id=str(event_id), event_type='message', data=payload_json)
         await asyncio.sleep(1)
 
 
@@ -135,8 +143,15 @@ async def generate_heartbeat_events(
     heartbeat_id = start_event_id
     while True:
         payload_json = build_heartbeat_payload()
-        await append_buffered_event(topic=topic, event_id=heartbeat_id, event_type='heartbeat', data=payload_json)
-        yield build_sse_event(event_id=str(heartbeat_id), event_type='heartbeat', data=payload_json)
+        await append_buffered_event(
+            topic=topic,
+            event_id=heartbeat_id,
+            event_type='heartbeat',
+            data=payload_json)
+        yield build_sse_event(
+            event_id=str(heartbeat_id),
+            event_type='heartbeat',
+            data=payload_json)
         heartbeat_id += 1
         await asyncio.sleep(interval_seconds)
 
@@ -151,16 +166,24 @@ async def event_stream(request: Request, topic: str, start_index: int) -> Any:
     heartbeat_interval_seconds = 5.0
 
     try:
-        buffered_events = await read_buffered_events(topic=topic, start_event_id=start_index)
+        buffered_events = await read_buffered_events(
+            topic=topic, start_event_id=start_index)
         if buffered_events:
             for event in buffered_events:
                 if await request.is_disconnected():
                     logger.info('Client disconnected during backlog replay')
                     return
-                yield build_sse_event(event_id=event['id'], event_type=event['type'], data=event['data'])
+                yield build_sse_event(
+                    event_id=event['id'],
+                    event_type=event['type'],
+                    data=event['data'])
 
             last_buffered_id = await read_last_buffered_id(topic=topic)
-            next_event_id = int(last_buffered_id) + 1 if last_buffered_id is not None else start_index
+            next_event_id = (
+                int(last_buffered_id) + 1
+                if last_buffered_id is not None
+                else start_index
+            )
         else:
             next_event_id = start_index
 
