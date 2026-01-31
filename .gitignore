@@ -1,5 +1,6 @@
 # === Personal ===
 Makefile.prod
+.env
 
 # === Python ===
 __pycache__/
