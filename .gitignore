@@ -1,3 +1,7 @@
+# === Personal ===
+Makefile.prod
+.env
+
 # === Python ===
 __pycache__/
 *.py[cod]
