@@ -162,11 +162,11 @@ if __name__ == '__main__':
         object_name=os.path.basename(created_file_path),
     )
 
-    # download_url = generate_presigned_get_url(
-    #     s3_client=s3,
-    #     bucket=upload_result['bucket'],
-    #     object_name=upload_result['key'],
-    #     expiration_seconds=3600,
-    # )
+    download_url = generate_presigned_get_url(
+        s3_client=s3,
+        bucket=upload_result['bucket'],
+        object_name=upload_result['key'],
+        expiration_seconds=3600,
+    )
 
-    # print(download_url)
+    print(download_url)
