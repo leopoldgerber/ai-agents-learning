@@ -5,7 +5,7 @@ STATE_FILE = "state.json"
 
 
 def save_session(headless: bool) -> None:
-    """Login simulation and save storage state."""
+    """Generate real browser state and save it."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context()
@@ -13,7 +13,32 @@ def save_session(headless: bool) -> None:
         page = context.new_page()
         page.goto("https://example.com")
 
-        # Here could be your business-logic
+        # Generate real localStorage value dynamically
+        page.evaluate(
+            """
+            () => {
+                localStorage.setItem(
+                    "dynamic_key",
+                    Date.now().toString()
+                );
+                sessionStorage.setItem(
+                    "session_key",
+                    Math.random().toString()
+                );
+            }
+            """
+        )
+
+        # Generate real cookie via browser API
+        context.add_cookies(
+            [
+                {
+                    "name": "generated_cookie",
+                    "value": page.evaluate("() => Math.random().toString()"),
+                    "url": "https://example.com",
+                }
+            ]
+        )
 
         context.storage_state(path=STATE_FILE)
 
@@ -21,24 +46,33 @@ def save_session(headless: bool) -> None:
         browser.close()
 
 
-def restore_session(headless: bool) -> str:
-    """Restore session from saved storage state."""
+def restore_session(headless: bool) -> dict:
+    """Restore session and verify state exists."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-
         context = browser.new_context(storage_state=STATE_FILE)
+
         page = context.new_page()
         page.goto("https://example.com")
 
-        title = page.title()
+        state_check = page.evaluate(
+            """
+            () => {
+                return {
+                    local: localStorage.length,
+                    session: sessionStorage.length
+                }
+            }
+            """
+        )
 
         context.close()
         browser.close()
 
-        return title
+        return state_check
 
 
 if __name__ == "__main__":
     save_session(headless=True)
-    restored_title = restore_session(headless=True)
-    print(restored_title)
+    restored_state = restore_session(headless=True)
+    print(restored_state)
