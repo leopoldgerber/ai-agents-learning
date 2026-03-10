@@ -2,6 +2,7 @@
 Makefile.prod
 .env*
 *.log
+paths.txt
 
 # === Python ===
 __pycache__/
