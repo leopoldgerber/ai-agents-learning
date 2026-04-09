@@ -1,0 +1,67 @@
+# Installation:
+# pip install langchain langchain-community langchain-huggingface
+# pip install sentence-transformers chromadb
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+
+
+# Source text
+documents_text = """
+Machine learning is a branch of artificial intelligence that allows
+computers to learn from data without explicit programming.
+
+Neural networks are machine learning models inspired by the way the
+human brain works. They consist of layers of interconnected nodes.
+
+Deep learning is a subset of machine learning and uses multilayer
+neural networks to solve complex tasks.
+
+Supervised learning algorithms require labeled data, where each
+example has a correct answer.
+
+Clustering is an unsupervised learning method that groups similar
+objects without prior labeling.
+"""
+
+# 1. Split text into fragments
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=200,
+    chunk_overlap=20,
+    length_function=len
+)
+texts = text_splitter.split_text(documents_text)
+
+# 2. Create embeddings
+embeddings = HuggingFaceEmbeddings(
+    model_name='sentence-transformers/all-MiniLM-L6-v2'
+)
+
+# 3. Create vector store
+vectorstore = Chroma.from_texts(
+    texts=texts,
+    embedding=embeddings,
+    collection_name='ml_knowledge'
+)
+
+# 4. Create retriever
+retriever = vectorstore.as_retriever(
+    search_type='similarity',
+    search_kwargs={'k': 2}
+)
+
+
+# 5. Simple search without LLM
+def simple_langchain_rag(query):
+    """Simple RAG with retrieval only."""
+    relevant_docs = retriever.invoke(query)
+
+    print(f'Query: {query}\n')
+    for i, doc in enumerate(relevant_docs, 1):
+        print(f'Result {i}:')
+        print(f'{doc.page_content}\n')
+
+
+# Usage example
+simple_langchain_rag('What is deep learning?')
